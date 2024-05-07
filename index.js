@@ -38,7 +38,7 @@ const exerciseSchema = new Schema({
 const User = mongoose.model('User', userSchema);
 const Exercise = mongoose.model('Exercise', exerciseSchema);
 
-// Route to create a new user
+
 app.post('/api/users', async (req, res) => {
   try {
     const user = new User({ username: req.body.username });
@@ -49,30 +49,34 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// Route to add an exercise to a user
-app.post('/api/users/:_id/exercises', async (req, res) => {
+app.get('/api/users', async (req, res) => {
   try {
-    const { description, duration, date } = req.body;
-    const userId = req.params._id;
+    const users = await User.find({}).select('username _id');
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+app.post('/api/users/:_id/exercises', async (req, res) => {
+  const { description, duration, date } = req.body;
+  const userId = req.params._id;
+
+  try {
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    let exerciseDate = date ? new Date(date) : new Date();
-    if (isNaN(exerciseDate.getTime())) {
-      return res.status(400).json({ error: "Invalid date" });
-    }
-
     const exercise = new Exercise({
-      userId: userId,
-      description,
-      duration,
-      date: exerciseDate
+      userId: user._id,
+      description: description,
+      duration: parseInt(duration, 10),
+      date: date ? new Date(date) : new Date()  // Use current date if no date provided
     });
 
     const savedExercise = await exercise.save();
-
     res.status(201).json({
       _id: userId,
       username: user.username,
@@ -85,54 +89,49 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
   }
 });
 
-app.get('/api/users/:_id/logs', async (req, res) => {
-  try {
-    const userId = req.params._id;
-    const { from, to, limit } = req.query;
 
-    // Fetch user to ensure they exist and get the username
+app.get('/api/users/:_id/logs', async (req, res) => {
+  const { from, to, limit } = req.query;
+  const userId = req.params._id;
+
+  try {
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Build the query object for exercises
-    let query = { userId: userId };
+    let queryConditions = { userId: userId };
     if (from || to) {
-      query.date = {};
+      queryConditions.date = {};
       if (from) {
-        query.date.$gte = new Date(from);
+        queryConditions.date.$gte = new Date(from);
       }
       if (to) {
-        query.date.$lte = new Date(to);
+        queryConditions.date.$lte = new Date(to);
       }
     }
 
-    // Execute query to fetch exercises with potential limit
-    let exercises = await Exercise.find(query)
-      .limit(parseInt(limit) || 0) // Convert limit to number; default no limit
-      .select('description duration date -_id');
+    let exercises = await Exercise.find(queryConditions)
+      .limit(parseInt(limit, 10) || 0)
+      .select('description duration date');
 
-    // Format the date and prepare log entries
-    exercises = exercises.map(exercise => ({
-      description: exercise.description,
-      duration: exercise.duration,
-      date: exercise.date.toDateString()
+    exercises = exercises.map(ex => ({
+      description: ex.description,
+      duration: ex.duration,
+      date: ex.date.toDateString()
     }));
 
-    // Preparing the final response object
-    const response = {
-      _id: user._id,
+    res.json({
+      _id: userId,
       username: user.username,
       count: exercises.length,
       log: exercises
-    };
-
-    res.json(response);
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
+
 
 const listener = app.listen(process.env.PORT || 3000, () => {
   console.log('Your app is listening on port ' + listener.address().port)
