@@ -91,46 +91,52 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
 
 
 app.get('/api/users/:_id/logs', async (req, res) => {
-  const { from, to, limit } = req.query;
-  const userId = req.params._id;
+  const { _id } = req.params;
 
   try {
-    const user = await User.findById(userId);
+    // Verify the user exists
+    const user = await User.findById(_id);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    let queryConditions = { userId: userId };
-    if (from || to) {
-      queryConditions.date = {};
-      if (from) {
-        queryConditions.date.$gte = new Date(from);
-      }
-      if (to) {
-        queryConditions.date.$lte = new Date(to);
-      }
+    // Building the query for exercises based on date filters
+    let queryConditions = { userId: _id }; // Ensures exercises are queried by userId
+    const { from, to, limit } = req.query;
+
+    // Date filters: Ensure both 'from' and 'to' are included in the condition correctly
+    if (from) {
+      queryConditions.date = { ...queryConditions.date, $gte: new Date(from) };
+    }
+    if (to) {
+      queryConditions.date = { ...queryConditions.date, $lte: new Date(to) };
     }
 
+    // Fetching exercises with optional limit
     let exercises = await Exercise.find(queryConditions)
-      .limit(parseInt(limit, 10) || 0)
-      .select('description duration date');
+      .limit(parseInt(limit, 10) || 0)  // Parse limit to integer, default to no limit
+      .select('description duration date');  // Properly select fields, ensure '_id' is needed or not
 
+    // Formatting exercises' date to a readable string
     exercises = exercises.map(ex => ({
       description: ex.description,
       duration: ex.duration,
-      date: ex.date.toDateString()
+      date: ex.date.toDateString()  // Convert date to a more readable format
     }));
 
+    // Respond with user info and exercise log
     res.json({
-      _id: userId,
+      _id: _id,
       username: user.username,
       count: exercises.length,
       log: exercises
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
+
+
 
 
 const listener = app.listen(process.env.PORT || 3000, () => {
